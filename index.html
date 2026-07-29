@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Análise de negociação - Fechado X Orçado</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --azul: #0B3760;
@@ -12,6 +13,7 @@
     --cinza: #6b7280;
     --borda: #dfe3e8;
     --bg: #f7f8fa;
+    --rosa: #D6336C;
   }
   *{box-sizing:border-box;}
   body{
@@ -64,10 +66,11 @@
   button.secondary{
     background:#fff; color:var(--azul); border:1px solid var(--azul);
   }
-  table{width:100%; border-collapse:collapse; font-size:13px; margin-top:10px;}
-  th, td{padding:11px 13px; border-bottom:1px solid var(--borda); text-align:center; white-space:nowrap;}
+  table{width:100%; border-collapse:collapse; font-size:12px; margin-top:10px;}
+  th, td{padding:8px 7px; border-bottom:1px solid var(--borda); text-align:center; white-space:nowrap;}
   th{background:var(--azul-claro); color:var(--azul); font-size:12px; font-weight:700;}
-  th:first-child, td:first-child{text-align:left; white-space:normal; width:24%;}
+  .insumo-col{text-align:left !important; white-space:normal !important; width:23%; cursor:help;}
+  .eye-col{width:28px !important; min-width:28px; text-align:center; padding:8px 4px !important;}
   tfoot td{font-weight:700; background:#f0f3f6; border-top:2px solid var(--azul);}
   .pos{color:var(--vermelho); font-weight:600;}
   .neg{color:var(--verde); font-weight:600;}
@@ -78,6 +81,22 @@
   th.sortable:hover{background:#dce9f7;}
   .sort-ind{font-size:10px; margin-left:4px; opacity:0.5;}
   .sort-ind.active{opacity:1;}
+  .eye-btn{cursor:pointer; font-size:16px; opacity:0.8; background:none !important; border:none; padding:0 !important; margin:0 !important; box-shadow:none; line-height:1;}
+  .eye-btn:hover{opacity:1;}
+  .nd-highlight{background:#FFF176; color:#5c4400; font-weight:700; padding:1px 6px; border-radius:3px;}
+  .editable-nd{cursor:pointer;}
+  .editable-nd:hover{opacity:0.75;}
+  .editable-val{cursor:pointer;}
+  .editable-val:hover{opacity:0.75;}
+  .edit-pencil{font-size:10px; opacity:0.7;}
+  .valor-editado{color:var(--rosa); font-weight:700; text-decoration:underline; cursor:pointer;}
+  .valor-editado:hover{opacity:0.8;}
+  .nota-editado{font-size:10px; font-style:italic; text-decoration:underline; color:var(--rosa); margin-top:2px; white-space:normal;}
+  .edit-input{width:78px; padding:4px 6px; border:1px solid var(--azul); border-radius:4px; font-size:12.5px; text-align:center;}
+  .edit-ok{padding:4px 8px !important; font-size:11px !important; margin:0 0 0 4px !important; border-radius:4px !important;}
+  tr.excluida{opacity:0.4;}
+  tr.excluida td{text-decoration:line-through;}
+  tr.excluida .eye-btn{text-decoration:none;}
   .resumo{
     display:flex; gap:16px; flex-wrap:wrap; margin-top:16px;
   }
@@ -96,6 +115,24 @@
   .hidden{display:none;}
   .conclusao{font-size:14px; margin-top:14px; padding:14px; border-radius:8px; background:#fafafa; border:1px solid var(--borda);}
   small.hint{color:var(--cinza); font-size:11.5px;}
+
+  @media print{
+    @page{ size: landscape; margin: 10mm; }
+    body{ background:#fff !important; padding:0; }
+    .no-print{ display:none !important; }
+    .card{ box-shadow:none !important; border:none !important; }
+    .eye-col, button.eye-btn, .edit-pencil{ display:none !important; }
+    .container{ max-width:none !important; }
+    div[style*="overflow-x:auto"]{ overflow:visible !important; width:auto !important; }
+    table{ font-size:9px !important; width:100% !important; table-layout:auto; }
+    th, td{ padding:4px 3px !important; white-space:normal !important; word-break:break-word; }
+    .insumo-col{ width:auto !important; }
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color-adjust: exact !important;
+    }
+  }
 </style>
 </head>
 <body>
@@ -103,7 +140,7 @@
   <h1>Análise de negociação - Fechado X Orçado</h1>
   <div class="subtitulo">Cole abaixo o texto da seção "Quais os itens que compõem" do Approvo (contrato ou aditivo)</div>
 
-  <div class="card">
+  <div class="card no-print">
     <label>Texto colado do sistema</label>
     <textarea id="input" placeholder="Cole aqui o bloco de texto com os itens, quantidades e tabelas de apropriação..."></textarea>
 
@@ -111,19 +148,23 @@
     <button class="secondary" onclick="limpar()">Limpar</button>
   </div>
 
-  <div id="avisos"></div>
+  <div id="avisos" class="no-print"></div>
 
   <div id="resultado" class="card hidden">
     <div class="resumo" id="resumoBoxes"></div>
+    <small class="hint no-print" style="display:block; margin-top:10px;">👁 Clique no ícone de olho (laranja) para incluir/excluir um item da análise. Campos marcados como <b>N/D ✎</b> podem ser preenchidos manualmente — clique, digite o valor e confirme em OK. Tudo é recalculado automaticamente.</small>
+    <div style="width:100%; overflow-x:auto;">
     <table>
       <thead>
         <tr>
-          <th rowspan="2" class="sortable" onclick="sortAndRender('desc','text')">INSUMO <span class="sort-ind" id="ind-desc">⇅</span></th>
+          <th rowspan="2" class="sortable insumo-col" onclick="sortAndRender('desc','text')">INSUMO <span class="sort-ind" id="ind-desc">⇅</span></th>
           <th rowspan="2" class="sortable" onclick="sortAndRender('qty','num')">QUANTIDADE<br>NEGOCIADA <span class="sort-ind" id="ind-qty">⇅</span></th>
+          <th rowspan="2" class="sortable" onclick="sortAndRender('unidade','text')">UN <span class="sort-ind" id="ind-unidade">⇅</span></th>
           <th colspan="2" class="tag-orcado">ORÇADO</th>
           <th colspan="2" class="tag-fechado">FECHADO</th>
           <th rowspan="2" class="sortable" onclick="sortAndRender('diff','num')">DIFERENÇA <span class="sort-ind" id="ind-diff">⇅</span></th>
           <th rowspan="2" class="sortable" onclick="sortAndRender('pct','num')">% <span class="sort-ind" id="ind-pct">⇅</span></th>
+          <th rowspan="2" class="eye-col"></th>
         </tr>
         <tr>
           <th class="tag-orcado sortable" onclick="sortAndRender('custo','num')">UNITÁRIO <span class="sort-ind" id="ind-custo">⇅</span></th>
@@ -135,7 +176,12 @@
       <tbody id="corpoTabela"></tbody>
       <tfoot id="rodapeTabela"></tfoot>
     </table>
+    </div>
     <div class="conclusao" id="conclusaoTexto"></div>
+    <div class="no-print" style="margin-top:16px;">
+      <button onclick="window.print()">📄 Baixar em PDF</button>
+      <button onclick="baixarExcel()">📊 Baixar em Excel</button>
+    </div>
   </div>
 </div>
 
@@ -147,7 +193,14 @@ function parseBR(str){
 }
 function fmt(v){
   if(isNaN(v)) return 'N/D';
-  return 'R$ ' + v.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  return 'R$ ' + v.toLocaleString('pt-BR', {minimumFractionDigits:0, maximumFractionDigits:2});
+}
+function fmtQty(v){
+  if(isNaN(v)) return 'N/D';
+  return v.toLocaleString('pt-BR', {minimumFractionDigits:0, maximumFractionDigits:2});
+}
+function escapeAttr(str){
+  return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 function limpar(){
   document.getElementById('input').value='';
@@ -160,17 +213,62 @@ function renderCorpo(linhasArr){
   corpo.innerHTML = linhasArr.map(l=>{
     const diff = l.diff, pct = l.pct;
     const diffClass = isNaN(diff) ? 'zero' : (diff>0.005 ? 'pos' : (diff<-0.005 ? 'neg' : 'zero'));
-    return '<tr>'+
-      '<td>'+l.code+' - '+l.desc.substring(0,45)+(l.desc.length>45?'...':'')+'</td>'+
-      '<td>'+l.qty.toLocaleString('pt-BR',{minimumFractionDigits:2, maximumFractionDigits:2})+'</td>'+
-      '<td>'+(l.custo!==undefined?fmt(l.custo):'N/D')+'</td>'+
-      '<td>'+(isNaN(l.orcado)?'N/D':fmt(l.orcado))+'</td>'+
-      '<td>'+(l.custoUnitFechado!==undefined && !isNaN(l.custoUnitFechado)?fmt(l.custoUnitFechado):'N/D')+'</td>'+
-      '<td>'+(isNaN(l.fechadoSubtotal)?'N/D':fmt(l.fechadoSubtotal))+'</td>'+
-      '<td class="'+diffClass+'">'+(isNaN(diff)?'N/D':(diff>=0?'+':'')+fmt(diff))+'</td>'+
-      '<td class="'+diffClass+'">'+(isNaN(pct)?'N/D':(pct>=0?'+':'')+pct.toFixed(1)+'%')+'</td>'+
+    const rowClass = l.incluido ? '' : ' class="excluida"';
+    const iconeSvg = l.incluido
+      ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0B3760" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'
+      : '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0B3760" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.8 21.8 0 0 1 5.06-6.06M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a21.8 21.8 0 0 1-3.22 4.53M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+    const custoIndisponivel = (l.custo===undefined || isNaN(l.custo));
+    const custoFechadoIndisponivel = (l.custoUnitFechado===undefined || isNaN(l.custoUnitFechado));
+    const fechadoIndisponivel = isNaN(l.fechadoSubtotal);
+    const orcadoIndisponivel = isNaN(l.orcado);
+    const qtyIndisponivel = isNaN(l.qty);
+    const rowTemND = qtyIndisponivel || custoIndisponivel || custoFechadoIndisponivel || fechadoIndisponivel || orcadoIndisponivel;
+
+    let qtyHtml;
+    if(l.qtyManual){
+      qtyHtml = '<span class="valor-editado" onclick="editarCampo('+l._id+',\'qty\')">'+fmtQty(l.qty)+'</span><div class="nota-editado">(valor alterado manualmente)</div>';
+    } else if(qtyIndisponivel){
+      qtyHtml = '<span class="nd-highlight editable-nd" onclick="editarCampo('+l._id+',\'qty\')">N/D ✎</span>';
+    } else if(l.linhaIncompleta){
+      qtyHtml = '<span class="nd-highlight editable-val" onclick="editarCampo('+l._id+',\'qty\')">'+fmtQty(l.qty)+' <span class="edit-pencil">✎</span></span>';
+    } else {
+      qtyHtml = fmtQty(l.qty);
+    }
+
+    const custoHtml = custoIndisponivel
+      ? '<span class="nd-highlight editable-nd" onclick="editarCampo('+l._id+',\'custo\')">N/D ✎</span>'
+      : (l.custoManual
+          ? '<span class="valor-editado" onclick="editarCampo('+l._id+',\'custo\')">'+fmt(l.custo)+'</span><div class="nota-editado">(valor alterado manualmente)</div>'
+          : fmt(l.custo));
+
+    const orcadoHtml = orcadoIndisponivel ? 'N/D' : fmt(l.orcado);
+    const custoFechadoHtml = custoFechadoIndisponivel ? '<span class="nd-highlight">N/D</span>' : fmt(l.custoUnitFechado);
+    const fechadoHtml = fechadoIndisponivel ? 'N/D' : fmt(l.fechadoSubtotal);
+    const diffHtml = isNaN(diff) ? 'N/D' : (diff>=0?'+':'')+fmt(diff);
+    const pctHtml = isNaN(pct) ? 'N/D' : (pct>=0?'+':'')+pct.toFixed(1)+'%';
+
+    return '<tr'+rowClass+'>'+
+      '<td class="insumo-col" title="'+escapeAttr(l.code+' - '+l.desc)+'">'+l.code+' - '+l.desc.substring(0,65)+(l.desc.length>65?'...':'')+'</td>'+
+      '<td id="cell-qty-'+l._id+'">'+qtyHtml+'</td>'+
+      '<td>'+(l.unidade || 'N/D')+'</td>'+
+      '<td id="cell-custo-'+l._id+'">'+custoHtml+'</td>'+
+      '<td>'+orcadoHtml+'</td>'+
+      '<td>'+custoFechadoHtml+'</td>'+
+      '<td>'+fechadoHtml+'</td>'+
+      '<td class="'+diffClass+'">'+diffHtml+'</td>'+
+      '<td class="'+diffClass+'">'+pctHtml+'</td>'+
+      '<td class="eye-col"><button class="eye-btn" onclick="toggleLinha('+l._id+')" title="'+(l.incluido?'Excluir da análise':'Incluir na análise')+'">'+iconeSvg+'</button></td>'+
     '</tr>';
   }).join('');
+}
+
+function toggleLinha(id){
+  const item = window.currentLinhas.find(l => l._id === id);
+  if(!item) return;
+  item.incluido = !item.incluido;
+  window.currentDisplayOrder = window.currentDisplayOrder || window.currentLinhas;
+  renderCorpo(window.currentDisplayOrder);
+  atualizarResumo();
 }
 
 function sortAndRender(key, type){
@@ -186,8 +284,8 @@ function sortAndRender(key, type){
 
   arr.sort((a,b)=>{
     if(type==='text'){
-      const va = (a.desc||'').toLowerCase();
-      const vb = (b.desc||'').toLowerCase();
+      const va = (a[key]||'').toString().toLowerCase();
+      const vb = (b[key]||'').toString().toLowerCase();
       return va.localeCompare(vb, 'pt-BR') * dir;
     } else {
       const va = a[key], vb = b[key];
@@ -201,6 +299,7 @@ function sortAndRender(key, type){
   });
 
   renderCorpo(arr);
+  window.currentDisplayOrder = arr;
 
   // Atualiza indicadores visuais (seta ativa na coluna ordenada)
   document.querySelectorAll('.sort-ind').forEach(s=>{ s.classList.remove('active'); s.textContent='⇅'; });
@@ -209,6 +308,111 @@ function sortAndRender(key, type){
     ind.classList.add('active');
     ind.textContent = dir===1 ? '▲' : '▼';
   }
+}
+
+function editarCampo(id, campo){
+  const item = window.currentLinhas.find(l => l._id === id);
+  if(!item) return;
+  const cell = document.getElementById('cell-'+campo+'-'+id);
+  if(!cell) return;
+  const valorAtual = (campo==='qty')
+    ? (isNaN(item.qty) ? '' : String(item.qty).replace('.',','))
+    : ((item.custo===undefined || isNaN(item.custo)) ? '' : String(item.custo).replace('.',','));
+
+  cell.innerHTML =
+    '<input type="text" class="edit-input" id="input-'+campo+'-'+id+'" value="'+valorAtual+'" '+
+    'onkeydown="if(event.key===\'Enter\') confirmarEdicao('+id+',\''+campo+'\')" />'+
+    '<button class="edit-ok" onclick="confirmarEdicao('+id+',\''+campo+'\')">OK</button>';
+
+  const inputEl = document.getElementById('input-'+campo+'-'+id);
+  inputEl.focus();
+  inputEl.select();
+}
+
+function confirmarEdicao(id, campo){
+  const item = window.currentLinhas.find(l => l._id === id);
+  if(!item) return;
+  const inputEl = document.getElementById('input-'+campo+'-'+id);
+  const val = parseBR(inputEl.value);
+  if(isNaN(val)){
+    alert('Digite um valor numérico válido (ex: 1234,56).');
+    return;
+  }
+
+  if(campo==='qty'){ item.qty = val; item.qtyManual = true; }
+  else if(campo==='custo'){ item.custo = val; item.custoManual = true; }
+
+  // Recalcula orçado, diferença e % para este item
+  item.orcado = (!isNaN(item.qty) && item.custo!==undefined && !isNaN(item.custo)) ? item.qty*item.custo : NaN;
+  item.diff = (!isNaN(item.orcado) && !isNaN(item.fechadoSubtotal)) ? (item.fechadoSubtotal - item.orcado) : NaN;
+  item.pct = (!isNaN(item.diff) && item.orcado>0) ? (item.diff/item.orcado*100) : NaN;
+
+  renderCorpo(window.currentDisplayOrder || window.currentLinhas);
+  atualizarResumo();
+}
+
+function getColunasExport(){
+  return ['Insumo','Qtd. Negociada','Unidade','Custo Unit. Orçado','Custo Total Orçado','Custo Unit. Fechado','Custo Total Fechado','Diferença','%','Incluído'];
+}
+
+function getLinhasExport(){
+  const linhas = window.currentDisplayOrder || window.currentLinhas || [];
+  return linhas.map(l => ({
+    insumo: l.code + ' - ' + l.desc,
+    qty: isNaN(l.qty) ? 'N/D' : l.qty,
+    unidade: l.unidade || 'N/D',
+    custo: (l.custo===undefined||isNaN(l.custo)) ? 'N/D' : l.custo,
+    orcado: isNaN(l.orcado) ? 'N/D' : l.orcado,
+    custoFechado: (l.custoUnitFechado===undefined||isNaN(l.custoUnitFechado)) ? 'N/D' : l.custoUnitFechado,
+    fechado: isNaN(l.fechadoSubtotal) ? 'N/D' : l.fechadoSubtotal,
+    diff: isNaN(l.diff) ? 'N/D' : l.diff,
+    pct: isNaN(l.pct) ? 'N/D' : l.pct,
+    incluido: l.incluido ? 'Sim' : 'Não'
+  }));
+}
+
+function getTotaisExport(){
+  const linhas = window.currentLinhas || [];
+  const incluidas = linhas.filter(l => l.incluido);
+  let totalOrcado = 0, totalFechado = 0;
+  incluidas.forEach(l=>{
+    if(!isNaN(l.orcado)) totalOrcado += l.orcado;
+    if(!isNaN(l.fechadoSubtotal)) totalFechado += l.fechadoSubtotal;
+  });
+  const diffTotal = totalFechado - totalOrcado;
+  const pctTotal = totalOrcado>0 ? (diffTotal/totalOrcado*100) : NaN;
+  return {totalOrcado, totalFechado, diffTotal, pctTotal};
+}
+
+function baixarExcel(){
+  if(!window.currentLinhas || !window.currentLinhas.length){
+    alert('Gere uma análise antes de baixar o relatório.');
+    return;
+  }
+  const dataHora = new Date().toLocaleString('pt-BR');
+  const { totalOrcado, totalFechado, diffTotal, pctTotal } = getTotaisExport();
+  const linhasExport = getLinhasExport();
+
+  const aoa = [
+    ['Análise de negociação - Fechado X Orçado'],
+    ['Gerado em ' + dataHora],
+    [],
+    getColunasExport(),
+    ...linhasExport.map(l => [l.insumo, l.qty, l.unidade, l.custo, l.orcado, l.custoFechado, l.fechado, l.diff, l.pct, l.incluido]),
+    [],
+    ['TOTAL','','','', totalOrcado, '', totalFechado, diffTotal, isNaN(pctTotal)?'N/D':pctTotal],
+    [],
+    ['Observações:'],
+  ];
+
+  const conclusaoTxt = document.getElementById('conclusaoTexto').innerText;
+  conclusaoTxt.split('\n').forEach(linha => { if(linha.trim()) aoa.push([linha]); });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:45},{wch:14},{wch:10},{wch:16},{wch:16},{wch:16},{wch:16},{wch:14},{wch:10},{wch:10}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Análise');
+  XLSX.writeFile(wb, 'relatorio_analise_negociacao.xlsx');
 }
 
 function analisar(){
@@ -236,10 +440,10 @@ function analisar(){
     const mCode = l.match(/^(\d+)\s*-\s*(.+)$/);
     if(mCode){
       // procura, nas próximas linhas, o padrão qty UNIT x preco
-      let qty=null, custoUnitFechado=null, subtotal=null, usedNext=0;
+      let qty=null, unidade=null, custoUnitFechado=null, subtotal=null, usedNext=0;
       for(let k=1;k<=2 && i+k<rawLines.length;k++){
-        const mQty = rawLines[i+k].match(/^([\d.,]+)\s+\S+\s*x\s*([\d.,]+)/i);
-        if(mQty){ qty = parseBR(mQty[1]); custoUnitFechado = parseBR(mQty[2]); usedNext=k; break; }
+        const mQty = rawLines[i+k].match(/^([\d.,]+)\s+(\S+)\s*x\s*([\d.,]+)/i);
+        if(mQty){ qty = parseBR(mQty[1]); unidade = mQty[2]; custoUnitFechado = parseBR(mQty[3]); usedNext=k; break; }
       }
       if(qty!==null){
         // linha seguinte ao qty deve ser o subtotal (número puro)
@@ -248,7 +452,7 @@ function analisar(){
           const mSub = rawLines[subIdx].match(/^([\d.,]+)$/);
           if(mSub) subtotal = parseBR(mSub[1]);
         }
-        itens.push({code:mCode[1], desc:mCode[2], qty, custoUnitFechado, fechadoSubtotal:subtotal});
+        itens.push({code:mCode[1], desc:mCode[2], qty, unidade, custoUnitFechado, fechadoSubtotal:subtotal});
       }
     }
   }
@@ -297,36 +501,61 @@ function analisar(){
   if(faltouCusto){
     warnings.push('Não foi possível encontrar o custo unitário orçado para um ou mais insumos (marcados como N/D). Confira se o detalhamento por serviço foi colado junto com o texto.');
   }
-  if(valorAditivoRef && Math.abs(valorAditivoRef-totalFechado) > 0.5){
-    warnings.push('O valor total fechado calculado (' + fmt(totalFechado) + ') difere do valor informado/detectado do aditivo (' + fmt(valorAditivoRef) + '). Confira se todos os itens foram colados.');
-  }
 
-  // Render avisos
+  // Render avisos (avisos de mismatch total ficam por conta de atualizarResumo)
   if(warnings.length){
     avisosDiv.innerHTML = warnings.map(w=>'<div class="warn">⚠ '+w+'</div>').join('');
   }
 
-  // Guarda diff/pct em cada linha para permitir ordenação depois
-  linhas.forEach(l=>{
+  // Guarda diff/pct em cada linha para permitir ordenação depois, e id/inclusão para o toggle do olho
+  linhas.forEach((l,idx)=>{
     l.diff = (!isNaN(l.orcado) && !isNaN(l.fechadoSubtotal)) ? (l.fechadoSubtotal - l.orcado) : NaN;
     l.pct = (!isNaN(l.diff) && l.orcado>0) ? (l.diff/l.orcado*100) : NaN;
+    l._id = idx;
+    l.incluido = true;
+    // Guarda permanentemente se a linha nasceu incompleta (para manter a quantidade sempre editável)
+    l.linhaIncompleta = isNaN(l.qty) || (l.custo===undefined || isNaN(l.custo)) ||
+      (l.custoUnitFechado===undefined || isNaN(l.custoUnitFechado)) || isNaN(l.fechadoSubtotal) || isNaN(l.orcado);
+    // Guarda permanentemente se o custo unitário orçado não foi encontrado originalmente
+    l.custoNaoEncontradoOriginal = (l.custo===undefined || isNaN(l.custo));
   });
   window.currentLinhas = linhas;
+  window.currentDisplayOrder = linhas;
   window.sortState = {key:null, dir:1};
+  window.avisosParse = warnings.slice();
+  window.valorAditivoRef = valorAditivoRef;
   renderCorpo(linhas);
+  atualizarResumo();
+
+  document.getElementById('resultado').classList.remove('hidden');
+}
+
+function atualizarResumo(){
+  const linhas = window.currentLinhas || [];
+  const incluidas = linhas.filter(l => l.incluido);
+  const excluidasCount = linhas.length - incluidas.length;
+
+  let totalOrcado = 0, totalFechado = 0;
+  incluidas.forEach(l=>{
+    if(!isNaN(l.orcado)) totalOrcado += l.orcado;
+    if(!isNaN(l.fechadoSubtotal)) totalFechado += l.fechadoSubtotal;
+  });
 
   const diffTotal = totalFechado - totalOrcado;
   const pctTotal = totalOrcado>0 ? (diffTotal/totalOrcado*100) : NaN;
   const diffTotalClass = diffTotal>0.005?'pos':(diffTotal<-0.005?'neg':'zero');
 
   document.getElementById('rodapeTabela').innerHTML =
-    '<tr><td>TOTAL</td><td></td>'+
+    '<tr><td class="insumo-col">TOTAL'+(excluidasCount>0?' <span style="font-weight:400;color:var(--cinza);font-size:11px;">('+excluidasCount+' excluído(s))</span>':'')+'</td>'+
+    '<td></td>'+
+    '<td></td>'+
     '<td></td>'+
     '<td>'+fmt(totalOrcado)+'</td>'+
     '<td></td>'+
     '<td>'+fmt(totalFechado)+'</td>'+
     '<td class="'+diffTotalClass+'">'+(diffTotal>=0?'+':'')+fmt(diffTotal)+'</td>'+
-    '<td class="'+diffTotalClass+'">'+(isNaN(pctTotal)?'N/D':(pctTotal>=0?'+':'')+pctTotal.toFixed(1)+'%')+'</td></tr>';
+    '<td class="'+diffTotalClass+'">'+(isNaN(pctTotal)?'N/D':(pctTotal>=0?'+':'')+pctTotal.toFixed(1)+'%')+'</td>'+
+    '<td></td></tr>';
 
   document.getElementById('resumoBoxes').innerHTML =
     '<div class="box"><div class="label">Total <span class="tag-fechado">fechado</span></div><div class="valor">'+fmt(totalFechado)+'</div></div>'+
@@ -343,12 +572,11 @@ function analisar(){
     textoConclusao += '✅ O valor fechado ficou praticamente igual ao orçado.<br>';
   }
 
-  // Insights por item
-  const validas = linhas.filter(l => !isNaN(l.orcado) && !isNaN(l.fechadoSubtotal));
+  // Insights por item (apenas itens incluídos)
+  const validas = incluidas.filter(l => !isNaN(l.orcado) && !isNaN(l.fechadoSubtotal));
   if(validas.length){
-    const comDiff = validas.map(l => ({...l, diff: l.fechadoSubtotal - l.orcado}));
-    const maiorAcrescimo = comDiff.reduce((a,b)=> b.diff>a.diff?b:a);
-    const maiorEconomia = comDiff.reduce((a,b)=> b.diff<a.diff?b:a);
+    const maiorAcrescimo = validas.reduce((a,b)=> b.diff>a.diff?b:a);
+    const maiorEconomia = validas.reduce((a,b)=> b.diff<a.diff?b:a);
     const insights = [];
 
     if(maiorAcrescimo.diff > 0.5){
@@ -358,23 +586,50 @@ function analisar(){
       insights.push('🔻 Maior economia: <b>'+maiorEconomia.code+' - '+maiorEconomia.desc.substring(0,40)+'</b> fechou '+fmt(Math.abs(maiorEconomia.diff))+' abaixo do orçado.');
     }
 
-    const acimaCount = comDiff.filter(l=>l.diff>0.5).length;
-    const abaixoCount = comDiff.filter(l=>l.diff<-0.5).length;
+    const acimaCount = validas.filter(l=>l.diff>0.5).length;
+    const abaixoCount = validas.filter(l=>l.diff<-0.5).length;
     insights.push('📊 '+acimaCount+' de '+validas.length+' item(ns) fecharam acima do orçado, e '+abaixoCount+' abaixo.');
 
-    if(insights.length){
-      textoConclusao += '<div style="margin-top:8px; font-size:13px; line-height:1.7;">'+insights.join('<br>')+'</div>';
-    }
+    textoConclusao += '<div style="margin-top:8px; font-size:13px; line-height:1.7;">'+insights.join('<br>')+'</div>';
   }
 
-  const semDados = linhas.filter(l => isNaN(l.orcado) || isNaN(l.fechadoSubtotal));
+  const semDados = incluidas.filter(l => isNaN(l.orcado) || isNaN(l.fechadoSubtotal));
   if(semDados.length){
     textoConclusao += '<div style="margin-top:8px; font-size:12.5px; color:var(--cinza);">⚠ '+semDados.length+' item(ns) sem dados suficientes para comparação: '+semDados.map(l=>l.code).join(', ')+'.</div>';
   }
 
+  // Aviso em vermelho: valor unitário orçado não encontrado (possível troca no orçamento) — mantido mesmo após correção manual
+  const semCustoOrcado = linhas.filter(l => l.custoNaoEncontradoOriginal);
+  if(semCustoOrcado.length){
+    const listaItens = semCustoOrcado.map(l => l.code + (l.custoManual ? ' (corrigido manualmente)' : '')).join(', ');
+    textoConclusao += '<div style="margin-top:8px; font-size:12.5px; color:var(--vermelho); font-weight:700;">🔴 Valor unitário orçado não encontrado originalmente para '+semCustoOrcado.length+' item(ns): '+listaItens+'. Provavelmente houve troca no orçamento.</div>';
+  }
+  if(excluidasCount>0){
+    textoConclusao += '<div style="margin-top:8px; font-size:12.5px; color:var(--cinza);">👁 '+excluidasCount+' item(ns) excluído(s) manualmente da análise.</div>';
+  }
+
+  // Lista de alterações manuais feitas pelo usuário
+  const editados = linhas.filter(l => l.qtyManual || l.custoManual);
+  if(editados.length){
+    const linhasEdit = editados.map(l=>{
+      const campos = [];
+      if(l.qtyManual) campos.push('Quantidade → '+l.qty.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}));
+      if(l.custoManual) campos.push('Custo unit. orçado → '+fmt(l.custo));
+      return '✏ <b>'+l.code+' - '+l.desc.substring(0,35)+(l.desc.length>35?'...':'')+'</b>: '+campos.join(' | ');
+    });
+    textoConclusao += '<div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--borda); font-size:12.5px;">'+
+      '<b style="color:var(--rosa);">✏ Alterações manuais nesta análise:</b><br>'+linhasEdit.join('<br>')+'</div>';
+  }
+
   conclusao.innerHTML = textoConclusao;
 
-  document.getElementById('resultado').classList.remove('hidden');
+  // Reconstroi avisos: parse + verificação de total (só faz sentido comparar se nada foi excluído manualmente)
+  const avisosDiv = document.getElementById('avisos');
+  const avisos = (window.avisosParse || []).slice();
+  if(excluidasCount===0 && window.valorAditivoRef && Math.abs(window.valorAditivoRef-totalFechado) > 0.5){
+    avisos.push('O valor total fechado calculado (' + fmt(totalFechado) + ') difere do valor informado/detectado no texto (' + fmt(window.valorAditivoRef) + '). Confira se todos os itens foram colados.');
+  }
+  avisosDiv.innerHTML = avisos.length ? avisos.map(w=>'<div class="warn">⚠ '+w+'</div>').join('') : '';
 }
 </script>
 </body>
